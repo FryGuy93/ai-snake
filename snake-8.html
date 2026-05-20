@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SNAKE // GRAND ARENA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --red: #ff3c41; --gold: #ffcc00; --bg: #050507; }
+        body {
+            background: var(--bg); color: white; font-family: 'Inter', sans-serif;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 100vh; margin: 0; overflow-x: hidden;
+        }
+        .header { 
+            width: 1600px; max-width: 95vw; display: flex; justify-content: space-between; align-items: flex-end; 
+            margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;
+        }
+        .title-group h1 { font-size: 1.8rem; font-weight: 900; margin: 0; letter-spacing: 6px; }
+        #score { font-size: 3rem; font-weight: 900; color: var(--red); line-height: 1; }
+
+        #game-container { position: relative; border: 2px solid #222; max-width: 95vw; overflow: hidden; }
+        canvas { display: block; background: #000; max-width: 100%; height: auto; }
+        
+        #overlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.9);
+            display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10;
+        }
+        button {
+            background: var(--red); border: none; color: white; padding: 15px 50px;
+            font-family: inherit; font-weight: 900; cursor: pointer; text-transform: uppercase;
+            letter-spacing: 2px; transition: 0.2s;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="title-group">
+            <h1>AI SNAKE</h1>
+            <span style="color: var(--red); font-size: 0.7rem; letter-spacing: 3px;">ORBITAL_v6.0</span>
+        </div>
+        <div style="text-align: right;">
+            <div id="score">0</div>
+        </div>
+    </div>
+
+    <div id="game-container">
+        <div id="overlay">
+            <h1 style="letter-spacing: 15px; color: var(--red); font-size: 3rem; margin-bottom: 40px;">CRASH</h1>
+            <button onclick="resetGame()">REBOOT</button>
+        </div>
+        <canvas id="gameCanvas" width="1600" height="1000"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        
+        // Setup Audio Context
+        let audioCtx;
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playSound(freq, type, duration, vol) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        const grid = 20;
+        let snake, ruby, quantum, score, moveQueue, lastMoveTime;
+        let currentDir = {x: grid, y: 0};
+        const moveInterval = 70;
+
+        function init() {
+            snake = [{x: 800, y: 500}, {x: 780, y: 500}, {x: 760, y: 500}];
+            currentDir = {x: grid, y: 0};
+            moveQueue = [];
+            score = 0;
+            quantum = null;
+            document.getElementById("score").innerText = score;
+            spawnRuby();
+        }
+
+        function spawnRuby() {
+            ruby = {
+                x: Math.floor(Math.random() * (canvas.width / grid)) * grid,
+                y: Math.floor(Math.random() * (canvas.height / grid)) * grid
+            };
+            if (snake.some(p => p.x === ruby.x && p.y === ruby.y)) spawnRuby();
+        }
+
+        function spawnQuantum() {
+            if (Math.random() < 0.25) {
+                quantum = {
+                    x: Math.floor(Math.random() * (canvas.width / grid)) * grid,
+                    y: Math.floor(Math.random() * (canvas.height / grid)) * grid,
+                    life: 300
+                };
+            }
+        }
+
+        function gameLoop(time) {
+            if (document.getElementById("overlay").style.display === "flex") return;
+            requestAnimationFrame(gameLoop);
+            if (!lastMoveTime) lastMoveTime = time;
+            if (time - lastMoveTime > moveInterval) {
+                update();
+                lastMoveTime = time;
+            }
+            draw();
+        }
+
+        function update() {
+            if (moveQueue.length > 0) {
+                const next = moveQueue.shift();
+                if (next.x !== -currentDir.x && next.y !== -currentDir.y) currentDir = next;
+            }
+
+            const head = { x: snake[0].x + currentDir.x, y: snake[0].y + currentDir.y };
+
+            if (head.x < 0 || head.x >= canvas.width || head.y < 0 || head.y >= canvas.height || 
+                snake.some(p => p.x === head.x && p.y === head.y)) {
+                playSound(150, 'sawtooth', 0.5, 0.1);
+                document.getElementById("overlay").style.display = "flex";
+                return;
+            }
+
+            snake.unshift(head);
+
+            if (head.x === ruby.x && head.y === ruby.y) {
+                score += 1;
+                playSound(523.25, 'sine', 0.1, 0.1); // C5
+                spawnRuby();
+                spawnQuantum();
+            } else if (quantum && head.x === quantum.x && head.y === quantum.y) {
+                score += 5;
+                playSound(880, 'triangle', 0.3, 0.1); // A5
+                quantum = null;
+            } else {
+                snake.pop();
+            }
+
+            if (quantum) {
+                quantum.life--;
+                if (quantum.life <= 0) quantum = null;
+            }
+            document.getElementById("score").innerText = score;
+        }
+
+        function draw() {
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Ruby (Circle)
+            ctx.shadowBlur = 15; ctx.shadowColor = "#ff3c41";
+            ctx.fillStyle = "#ff3c41";
+            ctx.beginPath();
+            ctx.arc(ruby.x + grid/2, ruby.y + grid/2, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw Quantum (Pulsing Golden Circle)
+            if (quantum) {
+                const pulse = Math.sin(performance.now() * 0.01) * 2;
+                ctx.shadowColor = "#ffcc00";
+                ctx.fillStyle = "#ffcc00";
+                ctx.beginPath();
+                ctx.arc(quantum.x + grid/2, quantum.y + grid/2, 9 + pulse, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw Snake
+            snake.forEach((p, i) => {
+                ctx.shadowBlur = i === 0 ? 20 : 0;
+                ctx.fillStyle = i === 0 ? "white" : `rgba(255, 60, 65, ${1 - (i/snake.length)})`;
+                ctx.fillRect(p.x + 1, p.y + 1, grid - 2, grid - 2);
+            });
+            ctx.shadowBlur = 0;
+        }
+
+        function resetGame() {
+            initAudio();
+            document.getElementById("overlay").style.display = "none";
+            init();
+            lastMoveTime = 0;
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener("keydown", e => {
+            initAudio();
+            let nextMove = null;
+            if (e.key === 'ArrowUp') nextMove = {x: 0, y: -grid};
+            if (e.key === 'ArrowDown') nextMove = {x: 0, y: grid};
+            if (e.key === 'ArrowLeft') nextMove = {x: -grid, y: 0};
+            if (e.key === 'ArrowRight') nextMove = {x: grid, y: 0};
+            
+            if (nextMove) {
+                e.preventDefault();
+                const lastQueued = moveQueue.length > 0 ? moveQueue[moveQueue.length - 1] : currentDir;
+                if (nextMove.x !== lastQueued.x || nextMove.y !== lastQueued.y) moveQueue.push(nextMove);
+            }
+        });
+
+        init();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
